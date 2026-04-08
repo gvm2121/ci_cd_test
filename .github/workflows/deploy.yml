@@ -71,8 +71,8 @@ jobs:
             docker stop myhtmlapp_new || true
             docker rm myhtmlapp_new || true
 
-            echo "🚀 Starting test container on 8080..."
-            docker run -d -p 8080:80 --name myhtmlapp_new myhtmlapp:$VERSION
+            echo "🚀 Starting test container (no host port)..."
+            docker run -d --name myhtmlapp_new myhtmlapp:$VERSION
 
             echo "📋 Containers after start:"
             docker ps -a
@@ -81,7 +81,7 @@ jobs:
             sleep 3
 
             echo "🩺 Health check..."
-            if ! curl -v http://localhost:8080; then
+            if ! docker exec myhtmlapp_new sh -c 'if command -v curl >/dev/null 2>&1; then curl -fsS http://127.0.0.1/ >/dev/null; else wget -qO- http://127.0.0.1/ >/dev/null; fi'; then
               echo "❌ Health check failed"
               echo "📜 Container logs:"
               docker logs myhtmlapp_new || true
