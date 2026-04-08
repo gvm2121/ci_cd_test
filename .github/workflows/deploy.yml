@@ -1,10 +1,10 @@
-name: Deploy (versioned + zero-downtime)
+```yaml
+name: Deploy (versioned + zero-downtime + debug)
 
 on:
   push:
     branches: [ "main" ]
 
-  # Permite ejecutar manualmente (para rollback)
   workflow_dispatch:
     inputs:
       version:
@@ -21,7 +21,6 @@ jobs:
 
       # Definir versión
       - name: Set version
-        id: vars
         run: |
           if [ -z "${{ github.event.inputs.version }}" ]; then
             echo "VERSION=${{ github.sha }}" >> $GITHUB_ENV
@@ -29,11 +28,11 @@ jobs:
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
           fi
 
-      # Build imagen con versión
+      # Build imagen
       - name: Build Docker image
         run: docker build -t myhtmlapp:$VERSION .
 
-      # Exportar imagen
+      # Guardar imagen
       - name: Save Docker image
         run: docker save myhtmlapp:$VERSION > myhtmlapp.tar
 
@@ -47,7 +46,7 @@ jobs:
           source: "myhtmlapp.tar"
           target: "/root/"
 
-      # Deploy remoto
+      # Deploy remoto con debug
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v0.1.6
         with:
@@ -55,19 +54,30 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
+            set -ex
 
             echo "📦 Loading image..."
             docker load < myhtmlapp.tar
 
+            echo "📋 Current containers:"
+            docker ps -a
+
             echo "🚀 Starting new container..."
             docker run -d -p 8080:80 --name myhtmlapp_new myhtmlapp:$VERSION
+
+            echo "📋 Containers after start:"
+            docker ps -a
 
             echo "⏳ Waiting for app..."
             sleep 3
 
             echo "🩺 Health check..."
-            curl -f http://localhost:8080 || (echo "❌ Health check failed" && exit 1)
+            if ! curl -v http://localhost:8080; then
+              echo "❌ Health check failed"
+              echo "📜 Container logs:"
+              docker logs myhtmlapp_new || true
+              exit 1
+            fi
 
             echo "🔄 Replacing old container..."
             docker stop myhtmlapp || true
@@ -75,7 +85,11 @@ jobs:
 
             docker rename myhtmlapp_new myhtmlapp
 
+            echo "📋 Final containers:"
+            docker ps -a
+
             echo "🧹 Cleaning unused images..."
             docker image prune -f
 
             echo "✅ Deploy successful: $VERSION"
+```
