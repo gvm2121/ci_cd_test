@@ -1,9 +1,16 @@
-name: Deploy HTML to VPS
+```yaml
+name: Deploy (versioned + zero-downtime)
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+
+  # Permite ejecutar manualmente (para rollback)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to deploy (commit SHA)"
+        required: false
 
 jobs:
   deploy:
@@ -13,13 +20,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      # Definir versión
+      - name: Set version
+        id: vars
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            echo "VERSION=${{ github.sha }}" >> $GITHUB_ENV
+          else
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          fi
+
+      # Build imagen con versión
       - name: Build Docker image
-        run: docker build -t myhtmlapp .
+        run: docker build -t myhtmlapp:$VERSION .
 
-      - name: Save image
-        run: docker save myhtmlapp > myhtmlapp.tar
+      # Exportar imagen
+      - name: Save Docker image
+        run: docker save myhtmlapp:$VERSION > myhtmlapp.tar
 
-      - name: Copy to VPS
+      # Copiar al VPS
+      - name: Copy image to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -28,6 +48,7 @@ jobs:
           source: "myhtmlapp.tar"
           target: "/root/"
 
+      # Deploy remoto
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v0.1.6
         with:
@@ -35,7 +56,28 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
+
+            echo "📦 Loading image..."
             docker load < myhtmlapp.tar
+
+            echo "🚀 Starting new container..."
+            docker run -d -p 8080:80 --name myhtmlapp_new myhtmlapp:$VERSION
+
+            echo "⏳ Waiting for app..."
+            sleep 3
+
+            echo "🩺 Health check..."
+            curl -f http://localhost:8080 || (echo "❌ Health check failed" && exit 1)
+
+            echo "🔄 Replacing old container..."
             docker stop myhtmlapp || true
             docker rm myhtmlapp || true
-            docker run -d -p 80:80 --name myhtmlapp myhtmlapp
+
+            docker rename myhtmlapp_new myhtmlapp
+
+            echo "🧹 Cleaning unused images..."
+            docker image prune -f
+
+            echo "✅ Deploy successful: $VERSION"
+```
