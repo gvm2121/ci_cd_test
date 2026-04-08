@@ -45,7 +45,7 @@ jobs:
           source: "myhtmlapp.tar"
           target: "/root/"
 
-      # Deploy remoto con debug
+      # Deploy remoto (FIX aplicado)
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v0.1.6
         with:
@@ -55,11 +55,17 @@ jobs:
           script: |
             set -ex
 
+            VERSION=${{ env.VERSION }}
+            echo "🚀 Deploying version: $VERSION"
+
             echo "📦 Loading image..."
             docker load < myhtmlapp.tar
 
             echo "📋 Current containers:"
             docker ps -a
+
+            echo "📦 Available images:"
+            docker images
 
             echo "🚀 Starting new container..."
             docker run -d -p 8080:80 --name myhtmlapp_new myhtmlapp:$VERSION
