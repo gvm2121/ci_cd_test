@@ -1,4 +1,4 @@
-name: Deploy (versioned + zero-downtime + debug)
+name: Deploy (versioned + safe switch + debug)
 
 on:
   push:
@@ -45,7 +45,7 @@ jobs:
           source: "myhtmlapp.tar"
           target: "/root/"
 
-      # Deploy remoto (FIX aplicado)
+      # Deploy remoto corregido
       - name: Deploy on VPS
         uses: appleboy/ssh-action@v0.1.6
         with:
@@ -67,7 +67,7 @@ jobs:
             echo "📦 Available images:"
             docker images
 
-            echo "🚀 Starting new container..."
+            echo "🚀 Starting test container on 8080..."
             docker run -d -p 8080:80 --name myhtmlapp_new myhtmlapp:$VERSION
 
             echo "📋 Containers after start:"
@@ -84,11 +84,15 @@ jobs:
               exit 1
             fi
 
-            echo "🔄 Replacing old container..."
+            echo "🔄 Switching to production (port 80)..."
             docker stop myhtmlapp || true
             docker rm myhtmlapp || true
 
-            docker rename myhtmlapp_new myhtmlapp
+            docker run -d -p 80:80 --name myhtmlapp myhtmlapp:$VERSION
+
+            echo "🧹 Cleaning temp container..."
+            docker stop myhtmlapp_new || true
+            docker rm myhtmlapp_new || true
 
             echo "📋 Final containers:"
             docker ps -a
