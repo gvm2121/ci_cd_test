@@ -79,4 +79,3 @@ jobs:
             docker image prune -f
 
             echo "✅ Deploy successful: $VERSION"
-```
